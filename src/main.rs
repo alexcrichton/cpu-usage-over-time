@@ -75,3 +75,61 @@ mod imp {
         println!("\t guest_nice {}", next.guest_nice - prev.guest_nice);
     }
 }
+
+#[cfg(target_os = "macos")]
+mod imp {
+    extern crate libc;
+
+    use std::fs::File;
+    use std::io::Read;
+    use std::time::Duration;
+    use std::ptr;
+
+    type host_t = libc::c_uint;
+    type mach_port_t = libc::c_uint;
+    type processor_flavor_t = libc::c_int;
+    type natural_t = libc::c_uint;
+    type processor_info_array_t = *mut libc::c_int;
+    type mach_msg_type_number_t = libc::c_int;
+    type kern_return_t = libc::c_int;
+
+    const PROESSOR_CPU_LOAD_INFO: processor_flavor_t = 2;
+
+    extern {
+        fn mach_host_self() -> mach_port_t;
+        fn host_processor_info(host: host_t,
+                               flavor: processor_flavor_t,
+                               out_processor_count: *mut natural_t,
+                               out_processor_info: *mut processor_info_array_t,
+                               out_processor_infoCnt: *mut mach_msg_type_number_t)
+            -> kern_return_t;
+    }
+
+    pub struct State {
+    }
+
+    pub fn current() -> State {
+        unsafe {
+            let mut num_cpus_u = 0;
+            let mut cpu_info = ptr::null_mut();
+            let mut cpu_info_cnt = 0;
+            let err = host_processor_info(
+                mach_host_self(),
+                PROESSOR_CPU_LOAD_INFO,
+                &mut num_cpus_u,
+                &mut cpu_info,
+                &mut cpu_info_cnt,
+            );
+            if err != 0 {
+                panic!("failed in host_processor_info");
+            }
+            println!("{} {}", num_cpus_u, cpu_info_cnt);
+
+            State {
+            }
+        }
+    }
+
+    pub fn print(cpus: usize, dur: &Duration, prev: &State, next: &State) {
+    }
+}
