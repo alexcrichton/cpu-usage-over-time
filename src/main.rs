@@ -1,3 +1,5 @@
+#[macro_use]
+extern crate log;
 extern crate num_cpus;
 
 use std::thread;
@@ -10,7 +12,8 @@ fn main() {
     loop {
         thread::sleep(dur);
         let next = imp::current();
-        imp::print(cpus, &dur, &cur, &next);
+        let idle = imp::pct_idle(cpus, &dur, &cur, &next);
+        println!("idle: {:5.02}%", idle);
         cur = next;
     }
 }
@@ -56,34 +59,37 @@ mod imp {
         }
     }
 
-    pub fn print(cpus: usize, dur: &Duration, prev: &State, next: &State) {
-        let clk_hz = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
-        let dur_nanos = dur.as_secs() * 1_000_000_000 +
-            (dur.subsec_nanos() as u64);
-        let tick_nanos = 1_000_000_000 / (clk_hz as u64);
-        let ticks = dur_nanos / tick_nanos;
-        println!("yay: {} {}", ticks, cpus);
-        println!("\t user {}", next.user - prev.user);
-        println!("\t nice {}", next.nice - prev.nice);
-        println!("\t system {}", next.system - prev.system);
-        println!("\t idle {}", next.idle - prev.idle);
-        println!("\t iowait {}", next.iowait - prev.iowait);
-        println!("\t irq {}", next.irq - prev.irq);
-        println!("\t softirq {}", next.softirq - prev.softirq);
-        println!("\t steal {}", next.steal - prev.steal);
-        println!("\t guest {}", next.guest - prev.guest);
-        println!("\t guest_nice {}", next.guest_nice - prev.guest_nice);
+    pub fn pct_idle(cpus: usize, dur: &Duration, prev: &State, next: &State) -> f64 {
+        let user = next.user - prev.user;
+        let nice = next.nice - prev.nice;
+        let system = next.system - prev.system;
+        let idle = next.idle - prev.idle;
+        let iowait = next.iowait - prev.iowait;
+        let irq = next.irq - prev.irq;
+        let softirq = next.softirq - prev.softirq;
+        let steal = next.steal - prev.steal;
+        let guest = next.guest - prev.guest;
+        let guest_nice = next.guest_nice - prev.guest_nice;
+        let total = user + nice + system + idle + iowait + irq + softirq +
+            steal + guest + guest_nice;
+
+        debug!("tick user={:5.02}% system={:5.02}% idle={:5.02}% other={:5.02}%",
+               (user as f64) / (total as f64) * 100.0,
+               (system as f64) / (total as f64) * 100.0,
+               (idle as f64) / (total as f64) * 100.0,
+               ((total - user - system - idle) as f64) / (total as f64) * 100.0);
+        (idle as f64) / (total as f64)
     }
 }
 
 #[cfg(target_os = "macos")]
+#[allow(bad_style)]
 mod imp {
     extern crate libc;
 
-    use std::fs::File;
-    use std::io::Read;
-    use std::time::Duration;
     use std::ptr;
+    use std::slice;
+    use std::time::Duration;
 
     type host_t = libc::c_uint;
     type mach_port_t = libc::c_uint;
@@ -94,6 +100,10 @@ mod imp {
     type kern_return_t = libc::c_int;
 
     const PROESSOR_CPU_LOAD_INFO: processor_flavor_t = 2;
+    const CPU_STATE_USER: usize = 0;
+    const CPU_STATE_SYSTEM: usize = 1;
+    const CPU_STATE_IDLE: usize = 2;
+    const CPU_STATE_NICE: usize = 3;
 
     extern {
         fn mach_host_self() -> mach_port_t;
@@ -106,6 +116,10 @@ mod imp {
     }
 
     pub struct State {
+        user: u64,
+        system: u64,
+        idle: u64,
+        nice: u64,
     }
 
     pub fn current() -> State {
@@ -123,13 +137,34 @@ mod imp {
             if err != 0 {
                 panic!("failed in host_processor_info");
             }
-            println!("{} {}", num_cpus_u, cpu_info_cnt);
-
-            State {
+            let cpu_info = slice::from_raw_parts(cpu_info, cpu_info_cnt as usize);
+            let mut ret = State {
+                user: 0,
+                system: 0,
+                idle: 0,
+                nice: 0,
+            };
+            for chunk in cpu_info.chunks(num_cpus_u as usize) {
+                ret.user += chunk[CPU_STATE_USER] as u64;
+                ret.system += chunk[CPU_STATE_SYSTEM] as u64;
+                ret.idle += chunk[CPU_STATE_IDLE] as u64;
+                ret.nice += chunk[CPU_STATE_NICE] as u64;
             }
+            ret
         }
     }
 
-    pub fn print(cpus: usize, dur: &Duration, prev: &State, next: &State) {
+    pub fn pct_idle(_cpus: usize, _dur: &Duration, prev: &State, next: &State) -> f64 {
+        let user = next.user - prev.user;
+        let system = next.system - prev.system;
+        let idle = next.idle - prev.idle;
+        let nice = next.nice - prev.nice;
+        let total = user + system + idle + nice;
+        debug!("tick user={:5.02}% system={:5.02}% idle={:5.02}% nice={:5.02}%",
+               (user as f64) / (total as f64) * 100.0,
+               (system as f64) / (total as f64) * 100.0,
+               (idle as f64) / (total as f64) * 100.0,
+               (nice as f64) / (total as f64) * 100.0);
+        (idle as f64) / (total as f64) * 100.0
     }
 }
