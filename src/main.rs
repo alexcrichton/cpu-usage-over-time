@@ -78,7 +78,7 @@ mod imp {
                (system as f64) / (total as f64) * 100.0,
                (idle as f64) / (total as f64) * 100.0,
                ((total - user - system - idle) as f64) / (total as f64) * 100.0);
-        (idle as f64) / (total as f64)
+        (idle as f64) / (total as f64) * 100.0
     }
 }
 
