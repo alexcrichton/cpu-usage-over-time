@@ -1,0 +1,10 @@
+[package]
+name = "cpu-usage-over-time"
+version = "0.1.0"
+authors = ["Alex Crichton <alex@alexcrichton.com>"]
+
+[dependencies]
+num_cpus = "1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
