@@ -208,7 +208,7 @@ mod imp {
         let total = user + kernel;
         println!("tick user={:5.02}% kernel={:5.02}% idle={:5.02}%",
                  (user as f64) / (total as f64) * 100.0,
-                 (kernel as f64) / (total as f64) * 100.0,
+                 ((kernel - idle) as f64) / (total as f64) * 100.0,
                  (idle as f64) / (total as f64) * 100.0);
         (idle as f64) / (total as f64) * 100.0
     }
