@@ -4,6 +4,9 @@ version = "0.1.0"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
 
 [dependencies]
-num_cpus = "1"
-libc = "0.2"
 log = "0.4"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ['processthreadsapi'] }

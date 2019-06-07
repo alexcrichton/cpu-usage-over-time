@@ -1,18 +1,16 @@
 #[macro_use]
 extern crate log;
-extern crate num_cpus;
 
 use std::thread;
 use std::time::Duration;
 
 fn main() {
-    let mut cur = imp::current();
+    let mut cur = imp::current().unwrap();
     let dur = Duration::new(0, 100_000_000);
-    let cpus = num_cpus::get();
     loop {
         thread::sleep(dur);
-        let next = imp::current();
-        let idle = imp::pct_idle(cpus, &dur, &cur, &next);
+        let next = imp::current().unwrap();
+        let idle = imp::pct_idle(&cur, &next);
         println!("idle: {:5.02}%", idle);
         cur = next;
     }
@@ -24,7 +22,6 @@ mod imp {
 
     use std::fs::File;
     use std::io::Read;
-    use std::time::Duration;
 
     pub struct State {
         user: u64,
@@ -39,7 +36,7 @@ mod imp {
         guest_nice: u64,
     }
 
-    pub fn current() -> State {
+    pub fn current() -> io::Result<State> {
         let mut state = String::new();
         File::open("/proc/stat").unwrap().read_to_string(&mut state).unwrap();
         let mut parts = state.lines().next().unwrap().split_whitespace();
@@ -59,7 +56,7 @@ mod imp {
         }
     }
 
-    pub fn pct_idle(cpus: usize, dur: &Duration, prev: &State, next: &State) -> f64 {
+    pub fn pct_idle(prev: &State, next: &State) -> f64 {
         let user = next.user - prev.user;
         let nice = next.nice - prev.nice;
         let system = next.system - prev.system;
@@ -154,7 +151,7 @@ mod imp {
         }
     }
 
-    pub fn pct_idle(_cpus: usize, _dur: &Duration, prev: &State, next: &State) -> f64 {
+    pub fn pct_idle(prev: &State, next: &State) -> f64 {
         let user = next.user - prev.user;
         let system = next.system - prev.system;
         let idle = next.idle - prev.idle;
@@ -166,5 +163,49 @@ mod imp {
                (idle as f64) / (total as f64) * 100.0,
                (nice as f64) / (total as f64) * 100.0);
         (idle as f64) / (total as f64) * 100.0
+    }
+}
+
+#[cfg(windows)]
+mod imp {
+    extern crate winapi;
+
+    use std::io;
+    use std::mem;
+    use self::winapi::um::processthreadsapi::*;
+    use self::winapi::shared::minwindef::*;
+
+    pub struct State {
+        idle: FILETIME,
+        kernel: FILETIME,
+        user: FILETIME,
+    }
+
+    pub fn current() -> io::Result<State> {
+        unsafe {
+            let mut ret = mem::zeroed::<State>();
+            let r = GetSystemTimes(
+                &mut ret.idle,
+                &mut ret.kernel,
+                &mut ret.user,
+            );
+            if r != 0 {
+                Ok(ret)
+            } else {
+                Err(io::Error::last_os_error())
+            }
+        }
+    }
+
+    pub fn pct_idle(prev: &State, next: &State) -> f64 {
+        fn to_u64(a: &FILETIME) -> u64 {
+            ((a.dwHighDateTime as u64) << 32) | (a.dwLowDateTime as u64)
+        }
+
+        let idle = to_u64(&next.idle) - to_u64(&prev.idle);
+        let kernel = to_u64(&next.kernel) - to_u64(&prev.kernel);
+        let user = to_u64(&next.user) - to_u64(&prev.user);
+        println!("tick user={} kernel={} idle={}", user, kernel, idle);
+        ((kernel - user) as f64) / (kernel as f64) * 100.0
     }
 }
