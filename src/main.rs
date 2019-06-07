@@ -205,7 +205,11 @@ mod imp {
         let idle = to_u64(&next.idle) - to_u64(&prev.idle);
         let kernel = to_u64(&next.kernel) - to_u64(&prev.kernel);
         let user = to_u64(&next.user) - to_u64(&prev.user);
-        println!("tick user={} kernel={} idle={}", user, kernel, idle);
-        ((kernel - user) as f64) / (kernel as f64) * 100.0
+        let total = user + kernel;
+        println!("tick user={:5.02}% kernel={:5.02}% idle={:5.02}%",
+                 (user as f64) / (total as f64) * 100.0,
+                 (kernel as f64) / (total as f64) * 100.0,
+                 (idle as f64) / (total as f64) * 100.0);
+        (idle as f64) / (total as f64) * 100.0
     }
 }
